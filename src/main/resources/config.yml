@@ -1,7 +1,21 @@
 port: 4567
 debug: false
-useKeyAuth: false
+useKeyAuth: true
 key: 'change_me'
+normalizeMessages: true
+
+# TLS (a.k.a. SSL) options
+tls:
+  # Set to true to enable TLS
+  enabled: false
+  # The path to your keystore (relative to ServerTap's plugin dir)
+  keystore: keystore.jks
+  # The password for the keystore
+  keystorePassword: ""
+
+# Use this list to set allowed CORS Origins ("*" by default)
+corsOrigins:
+  - "*"
 
 # Example webhook configuration
 #webhooks:
@@ -13,3 +27,7 @@ key: 'change_me'
 #      - PlayerKick
 #      - PlayerDeath
 #      - PlayerChat
+
+# Number of console log lines to send when websocket connections are opened
+# Set to 0 to effectively disable this
+websocketConsoleBuffer: 1000

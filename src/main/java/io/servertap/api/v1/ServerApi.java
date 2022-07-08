@@ -5,7 +5,6 @@ import io.javalin.http.BadRequestResponse;
 import io.javalin.http.Context;
 import io.javalin.http.NotFoundResponse;
 import io.javalin.http.ServiceUnavailableResponse;
-import io.javalin.plugin.json.JavalinJson;
 import io.javalin.plugin.openapi.annotations.*;
 import io.servertap.Constants;
 import io.servertap.Lag;
@@ -14,18 +13,17 @@ import io.servertap.ServerExecCommandSender;
 import io.servertap.api.v1.models.*;
 import io.servertap.mojang.api.MojangApiService;
 import io.servertap.mojang.api.models.NameChange;
+import io.servertap.utils.GsonSingleton;
 import org.apache.commons.lang.StringUtils;
 import org.bukkit.BanList;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
-import org.bukkit.plugin.Plugin;
 import org.bukkit.scoreboard.ScoreboardManager;
 
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
-import java.math.BigDecimal;
 import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -72,6 +70,8 @@ public class ServerApi {
         server.setVersion(bukkitServer.getVersion());
         server.setBukkitVersion(bukkitServer.getBukkitVersion());
         server.setWhitelistedPlayers(getWhitelist());
+        server.setMaxPlayers(bukkitServer.getMaxPlayers());
+        server.setOnlinePlayers(bukkitServer.getOnlinePlayers().size());
 
         // Possibly add 5m and 15m in the future?
         server.setTps(Lag.getTPSString());
@@ -127,84 +127,6 @@ public class ServerApi {
         ctx.json(server);
     }
 
-    @OpenApi(
-            path = "/v1/worlds/save",
-            summary = "Triggers a world save of all worlds",
-            method = HttpMethod.POST,
-            tags = {"Server"},
-            headers = {
-                    @OpenApiParam(name = "key")
-            },
-            responses = {
-                    @OpenApiResponse(status = "200")
-            }
-    )
-    public static void saveAllWorlds(Context ctx) {
-        org.bukkit.Server bukkitServer = Bukkit.getServer();
-
-        Plugin pluginInstance = bukkitServer.getPluginManager().getPlugin("ServerTap");
-
-        if (pluginInstance != null) {
-            // Run the saves on the main thread, can't use sync methods from here otherwise
-            bukkitServer.getScheduler().scheduleSyncDelayedTask(pluginInstance, () -> {
-                for (org.bukkit.World world : Bukkit.getWorlds()) {
-                    try {
-                        world.save();
-                    } catch (Exception e) {
-                        // Just warn about the issue
-                        log.warning(String.format("Couldn't save World %s %s", world.getName(), e.getMessage()));
-                    }
-                }
-            });
-        }
-
-        ctx.json("success");
-    }
-
-    @OpenApi(
-            path = "/v1/worlds/:uuid/save",
-            summary = "Triggers a world save",
-            method = HttpMethod.POST,
-            tags = {"Server"},
-            headers = {
-                    @OpenApiParam(name = "key")
-            },
-            pathParams = {
-                    @OpenApiParam(name = "uuid", description = "The UUID of the World to save")
-            },
-            responses = {
-                    @OpenApiResponse(status = "200")
-            }
-    )
-    public static void saveWorld(Context ctx) {
-        org.bukkit.Server bukkitServer = Bukkit.getServer();
-
-        UUID worldUUID = ValidationUtils.safeUUID(ctx.pathParam("uuid"));
-        if (worldUUID == null) {
-            throw new BadRequestResponse(Constants.INVALID_UUID);
-        }
-
-        org.bukkit.World world = bukkitServer.getWorld(worldUUID);
-
-        if (world != null) {
-            Plugin pluginInstance = bukkitServer.getPluginManager().getPlugin("ServerTap");
-
-            if (pluginInstance != null) {
-                // Run the saves on the main thread, can't use sync methods from here otherwise
-                bukkitServer.getScheduler().scheduleSyncDelayedTask(pluginInstance, () -> {
-
-                    try {
-                        world.save();
-                    } catch (Exception e) {
-                        // Just warn about the issue
-                        log.warning(String.format("Couldn't save World %s %s", world.getName(), e.getMessage()));
-                    }
-                });
-            }
-        }
-
-        ctx.json("success");
-    }
 
     @OpenApi(
             path = "/v1/chat/broadcast",
@@ -296,7 +218,7 @@ public class ServerApi {
     }
 
     @OpenApi(
-            path = "/v1/scoreboard/:name",
+            path = "/v1/scoreboard/{name}",
             summary = "Get information about a specific objective",
             tags = {"Server"},
             headers = {
@@ -310,7 +232,7 @@ public class ServerApi {
             }
     )
     public static void objectiveGet(Context ctx) {
-        String objectiveName = ctx.pathParam(":name");
+        String objectiveName = ctx.pathParam("name");
         ScoreboardManager manager = Bukkit.getScoreboardManager();
         org.bukkit.scoreboard.Scoreboard gameScoreboard = manager.getMainScoreboard();
         org.bukkit.scoreboard.Objective objective = gameScoreboard.getObjective(objectiveName);
@@ -351,104 +273,6 @@ public class ServerApi {
         o.setScores(scores);
 
         return o;
-    }
-
-    @OpenApi(
-            path = "/v1/worlds",
-            summary = "Get information about all worlds",
-            tags = {"Server"},
-            headers = {
-                    @OpenApiParam(name = "key")
-            },
-            responses = {
-                    @OpenApiResponse(status = "200", content = @OpenApiContent(from = World.class, isArray = true))
-            }
-    )
-    public static void worldsGet(Context ctx) {
-        List<World> worlds = new ArrayList<>();
-        Bukkit.getServer().getWorlds().forEach(world -> worlds.add(fromBukkitWorld(world)));
-
-        ctx.json(worlds);
-    }
-
-    @OpenApi(
-            path = "/v1/worlds/:uuid",
-            summary = "Get information about a specific world",
-            tags = {"Server"},
-            headers = {
-                    @OpenApiParam(name = "key")
-            },
-            pathParams = {
-                    @OpenApiParam(name = "uuid", description = "The uuid of the world")
-            },
-            responses = {
-                    @OpenApiResponse(status = "200", content = @OpenApiContent(from = World.class))
-            }
-    )
-    public static void worldGet(Context ctx) {
-
-        UUID worldUUID = ValidationUtils.safeUUID(ctx.pathParam("uuid"));
-        if (worldUUID == null) {
-            throw new BadRequestResponse(Constants.INVALID_UUID);
-        }
-
-        org.bukkit.World bukkitWorld = Bukkit.getServer().getWorld(worldUUID);
-
-        // 404 if no world found
-        if (bukkitWorld == null) throw new NotFoundResponse();
-
-        ctx.json(fromBukkitWorld(bukkitWorld));
-    }
-
-    private static World fromBukkitWorld(org.bukkit.World bukkitWorld) {
-        World world = new World();
-
-        world.setName(bukkitWorld.getName());
-        world.setUuid(bukkitWorld.getUID().toString());
-
-        // TODO: The Enum for Environment makes this annoying to get
-        switch (bukkitWorld.getEnvironment()) {
-            case NORMAL:
-                world.setEnvironment(0);
-                break;
-            case NETHER:
-                world.setEnvironment(-1);
-                break;
-            case THE_END:
-                world.setEnvironment(1);
-                break;
-            default:
-                world.setEnvironment(0);
-                break;
-        }
-
-        world.setTime(BigDecimal.valueOf(bukkitWorld.getTime()));
-        world.setAllowAnimals(bukkitWorld.getAllowAnimals());
-        world.setAllowMonsters(bukkitWorld.getAllowMonsters());
-        world.setGenerateStructures(bukkitWorld.canGenerateStructures());
-
-        int value = 0;
-        switch (bukkitWorld.getDifficulty()) {
-            case PEACEFUL:
-                value = 0;
-                break;
-            case EASY:
-                value = 1;
-                break;
-            case NORMAL:
-                value = 3;
-                break;
-            case HARD:
-                value = 2;
-                break;
-        }
-        world.setDifficulty(value);
-
-        world.setSeed(BigDecimal.valueOf(bukkitWorld.getSeed()));
-        world.setStorm(bukkitWorld.hasStorm());
-        world.setThundering(bukkitWorld.isThundering());
-
-        return world;
     }
 
     private static Set<Whitelist> getWhitelist() {
@@ -545,7 +369,7 @@ public class ServerApi {
             }
         }
         whitelist.add(newEntry);
-        final String json = new Gson().toJson(whitelist);
+        final String json = GsonSingleton.getInstance().toJson(whitelist);
         try {
             final String path = Paths.get(directory.getAbsolutePath(), "whitelist.json").toString();
             final File myObj = new File(path);
@@ -559,34 +383,6 @@ public class ServerApi {
             e.printStackTrace();
             ctx.json("failed");
         }
-    }
-
-    @OpenApi(
-            path = "/v1/plugins",
-            method = HttpMethod.GET,
-            summary = "Get a list of installed plugins",
-            description = "Responds with an array of objects containing keys name and enabled.",
-            tags = {"Plugins"},
-            headers = {
-                    @OpenApiParam(name = "key")
-            },
-            responses = {
-                    @OpenApiResponse(status = "200", content = @OpenApiContent(type = "application/json"))
-            }
-    )
-    public static void listPlugins(Context ctx) {
-        ArrayList<io.servertap.api.v1.models.Plugin> pluginList = new ArrayList<>();
-        for (org.bukkit.plugin.Plugin plugin : Bukkit.getPluginManager().getPlugins()) {
-
-            io.servertap.api.v1.models.Plugin pl = new io.servertap.api.v1.models.Plugin();
-            pl.setName(plugin.getName());
-            pl.setEnabled(plugin.isEnabled());
-            pl.setVersion(plugin.getDescription().getVersion());
-
-            pluginList.add(pl);
-        }
-
-        ctx.json(pluginList);
     }
 
     @OpenApi(
@@ -667,7 +463,7 @@ public class ServerApi {
             }
     )
     public static void getOps(Context ctx) {
-        org.bukkit.OfflinePlayer players[] = Bukkit.getOfflinePlayers();
+        Set<org.bukkit.OfflinePlayer> players = Bukkit.getOperators();
         ArrayList<io.servertap.api.v1.models.OfflinePlayer> opedPlayers = new ArrayList<io.servertap.api.v1.models.OfflinePlayer>();
         for (org.bukkit.OfflinePlayer player : players) {
             if (!player.isOp()) {
@@ -720,11 +516,13 @@ public class ServerApi {
         AtomicLong time = new AtomicLong(timeRaw != null ? Long.parseLong(timeRaw) : 0);
         if (time.get() < 0) time.set(0);
 
-        ctx.result(CompletableFuture.supplyAsync(() -> {
+        ctx.future(CompletableFuture.supplyAsync(() -> {
             CompletableFuture<String> future = new ServerExecCommandSender().executeCommand(command, time.get(), TimeUnit.MILLISECONDS);
             try {
                 String output = future.get();
-                return "application/json".equalsIgnoreCase(ctx.contentType()) ? JavalinJson.toJson(output) : output;
+                Gson g = GsonSingleton.getInstance();
+
+                return "application/json".equalsIgnoreCase(ctx.contentType()) ? g.toJson(output) : output;
             } catch (InterruptedException | ExecutionException e) {
                 throw new RuntimeException(e);
             }

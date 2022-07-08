@@ -9,6 +9,7 @@ import io.servertap.PluginEntrypoint;
 import io.servertap.api.v1.models.ItemStack;
 import io.servertap.api.v1.models.Player;
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.World;
 
@@ -34,32 +35,14 @@ public class PlayerApi {
         ArrayList<Player> players = new ArrayList<>();
 
         Bukkit.getOnlinePlayers().forEach((player -> {
-            Player p = new Player();
-            p.setUuid(player.getUniqueId().toString());
-            p.setDisplayName(player.getDisplayName());
-
-            p.setAddress(player.getAddress().getHostName());
-            p.setPort(player.getAddress().getPort());
-
-            p.setExhaustion(player.getExhaustion());
-            p.setExp(player.getExp());
-
-            p.setWhitelisted(player.isWhitelisted());
-            p.setBanned(player.isBanned());
-            p.setOp(player.isOp());
-
-            if (PluginEntrypoint.getEconomy() != null) {
-                p.setBalance(PluginEntrypoint.getEconomy().getBalance(player));
-            }
-
-            players.add(p);
+            players.add(getPlayer(player));
         }));
 
         ctx.json(players);
     }
 
     @OpenApi(
-            path = "/v1/players/:uuid",
+            path = "/v1/players/{uuid}",
             method = HttpMethod.GET,
             summary = "Gets a specific online player by their UUID",
             tags = {"Player"},
@@ -74,8 +57,6 @@ public class PlayerApi {
             }
     )
     public static void playerGet(Context ctx) {
-        Player p = new Player();
-
         if (ctx.pathParam("uuid").isEmpty()) {
             throw new BadRequestResponse(Constants.PLAYER_UUID_MISSING);
         }
@@ -91,10 +72,17 @@ public class PlayerApi {
             throw new NotFoundResponse(Constants.PLAYER_NOT_FOUND);
         }
 
-        if (PluginEntrypoint.getEconomy() != null) {
-            p.setBalance(PluginEntrypoint.getEconomy().getBalance(player));
-        }
+        ctx.json(getPlayer(player));
+    }
 
+    /**
+     * Internal method to convert a Bukkit player into a ServerTap player
+     *
+     * @param player The Bukkit player
+     * @return The ServerTap player
+     */
+    private static Player getPlayer(org.bukkit.entity.Player player) {
+        Player p = new Player();
         p.setUuid(player.getUniqueId().toString());
         p.setDisplayName(player.getDisplayName());
 
@@ -108,7 +96,29 @@ public class PlayerApi {
         p.setBanned(player.isBanned());
         p.setOp(player.isOp());
 
-        ctx.json(p);
+        if (PluginEntrypoint.getEconomy() != null) {
+            p.setBalance(PluginEntrypoint.getEconomy().getBalance(player));
+        }
+
+        p.setHunger(player.getFoodLevel());
+        p.setHealth(player.getHealth());
+        p.setSaturation(player.getSaturation());
+
+        p.setDimension(player.getWorld().getEnvironment().toString());
+
+        Location playerLocation = player.getLocation();
+        Double[] convertedLocation = new Double[3];
+        convertedLocation[0] = playerLocation.getX();
+        convertedLocation[1] = playerLocation.getY();
+        convertedLocation[2] = playerLocation.getZ();
+
+        p.setLocation(convertedLocation);
+
+        p.setGamemode(player.getGameMode().toString());
+
+        p.setLastPlayed(player.getLastPlayed());
+
+        return p;
     }
 
     @OpenApi(
@@ -142,15 +152,16 @@ public class PlayerApi {
                 p.setBalance(PluginEntrypoint.getEconomy().getBalance(offlinePlayers[i]));
             }
 
-            players.add(p);
+            p.setLastPlayed(player.getLastPlayed());
 
+            players.add(p);
         }
 
         ctx.json(players);
     }
 
     @OpenApi(
-            path = "/v1/players/:playerUuid/:worldUuid/inventory",
+            path = "/v1/players/{playerUuid}/{worldUuid}/inventory",
             method = HttpMethod.GET,
             summary = "Gets a specific online player's Inventory in the specified world",
             tags = {"Player"},

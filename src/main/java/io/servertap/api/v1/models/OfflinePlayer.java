@@ -10,7 +10,7 @@ public class OfflinePlayer {
     private String uuid = null;
 
     @Expose
-    private String Name = null;
+    private String name = null;
 
     @Expose
     private Boolean whitelisted = null;
@@ -24,6 +24,8 @@ public class OfflinePlayer {
     @Expose
     private Double balance = null;
 
+    @Expose
+    private Long lastPlayed = null;
 
     public OfflinePlayer uuid(String uuid) {
         this.uuid = uuid;
@@ -59,7 +61,7 @@ public class OfflinePlayer {
     }
 
     public OfflinePlayer name(String displayName) {
-        this.Name = displayName;
+        this.name = displayName;
         return this;
     }
 
@@ -69,11 +71,11 @@ public class OfflinePlayer {
      * @return displayName
      **/
     public String getDisplayName() {
-        return Name;
+        return name;
     }
 
     public void setDisplayName(String displayName) {
-        this.Name = displayName;
+        this.name = displayName;
     }
 
 
@@ -130,5 +132,13 @@ public class OfflinePlayer {
 
     public void setOp(Boolean op) {
         this.op = op;
+    }
+
+    public Long getLastPlayed() {
+        return lastPlayed;
+    }
+
+    public void setLastPlayed(Long lastPlayed) {
+        this.lastPlayed = lastPlayed;
     }
 }
